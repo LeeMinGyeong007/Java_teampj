@@ -1,0 +1,242 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.io.File;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class Mypage extends JFrame {
+    private JLabel profilePic;
+    private JLabel nicknameLabel; // 닉네임 라벨 참조 추가
+    private String username; // 유저네임 변수 추가
+    private String nickname; // 닉네임 변수 추가
+
+    public Mypage(String username, String nickname) {
+        this.username = username;
+        this.nickname = nickname;
+        setTitle("My Page");
+        setSize(400, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        // 메인 패널
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBackground(Color.WHITE);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(50, 50, 50, 50));
+
+        // 프로필 이미지
+        profilePic = new JLabel();
+        profilePic.setOpaque(true);
+        profilePic.setBackground(new Color(200, 160, 255)); // 기본 프로필 색상
+        profilePic.setPreferredSize(new Dimension(100, 100));
+        profilePic.setMaximumSize(new Dimension(100, 100));
+        profilePic.setAlignmentX(Component.CENTER_ALIGNMENT);
+        setProfileImage();
+        mainPanel.add(profilePic);
+
+        // 닉네임 라벨
+        nicknameLabel = new JLabel("닉네임: " + nickname);
+        nicknameLabel.setFont(new Font("Malgun Gothic", Font.BOLD, 18)); // 한글 지원 폰트 설정
+        nicknameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        nicknameLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        mainPanel.add(nicknameLabel);
+
+        // 유저네임 라벨
+        JLabel usernameLabel = new JLabel("아이디: " + username);
+        usernameLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 16)); // 한글 지원 폰트 설정
+        usernameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        usernameLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 20, 0));
+        mainPanel.add(usernameLabel);
+
+        // 나머지 UI 구성 요소 및 이벤트 설정...
+        JButton editProfileButton = new JButton("프로필 편집");
+        editProfileButton.setFocusPainted(false);
+        editProfileButton.setMaximumSize(new Dimension(300, 40));
+        editProfileButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mainPanel.add(editProfileButton);
+
+        JButton settingsButton = new JButton("회원 정보 수정");
+        settingsButton.setFocusPainted(false);
+        settingsButton.setMaximumSize(new Dimension(300, 40));
+        settingsButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        mainPanel.add(settingsButton);
+
+        JButton logoutButton = new JButton("로그아웃");
+        logoutButton.setForeground(Color.RED);
+        logoutButton.setFocusPainted(false);
+        logoutButton.setMaximumSize(new Dimension(300, 40));
+        logoutButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        mainPanel.add(logoutButton);
+
+        JButton deleteAccountButton = new JButton("회원 탈퇴");
+        deleteAccountButton.setForeground(Color.RED);
+        deleteAccountButton.setFocusPainted(false);
+        deleteAccountButton.setMaximumSize(new Dimension(300, 40));
+        deleteAccountButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        mainPanel.add(deleteAccountButton);
+
+        add(mainPanel, BorderLayout.CENTER);
+
+        // 하단 네비게이션 바 패널
+        JPanel navBar = new JPanel();
+        navBar.setLayout(new GridLayout(1, 3));
+        navBar.setBackground(Color.WHITE);
+        navBar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 230, 200))); // 구분선 추가
+
+        // 네비게이션 버튼들 추가
+        addNavButton(navBar, "MENU");
+        addNavButton(navBar, "HOME");
+        addNavButton(navBar, "MY");
+
+        // 네비게이션 바를 프레임 하단에 추가
+        add(navBar, BorderLayout.SOUTH);
+
+        setVisible(true);
+
+        // 프로필 편집 버튼 클릭 이벤트
+        editProfileButton.addActionListener(e -> new EditProfileForm(Mypage.this));
+
+        // 로그아웃 버튼 클릭 이벤트
+        logoutButton.addActionListener(e -> {
+            new LoginForm();
+            dispose();
+        });
+
+        // 회원 탈퇴 버튼 클릭 이벤트
+        deleteAccountButton.addActionListener(e -> deleteAccount());
+    }
+    
+    public ImageIcon getProfileImageIcon() {
+        // 현재 profilePic에 설정된 Icon이 ImageIcon 타입인지 확인
+        if (profilePic.getIcon() instanceof ImageIcon) {
+            return (ImageIcon) profilePic.getIcon();
+        }
+        return null; // Icon이 없으면 null 반환
+    }
+
+
+    // 네비게이션 버튼 추가 메서드
+    private void addNavButton(JPanel panel, String text) {
+        JButton navButton = new JButton(text);
+        navButton.setFont(new Font("Malgun Gothic", Font.PLAIN, 14));
+        navButton.setFocusPainted(false);
+        navButton.setContentAreaFilled(false);
+        navButton.setBorderPainted(false);
+        navButton.addActionListener(e -> handleNavButtonClick(text));
+        panel.add(navButton);
+    }
+
+    // 네비게이션 버튼 클릭 처리 메서드
+    private void handleNavButtonClick(String buttonName) {
+        if (buttonName.equals("MENU")) {
+            new MenuScreen(username, nickname); // MenuScreen으로 전환
+            dispose();
+        } else if (buttonName.equals("HOME")) {
+            JOptionPane.showMessageDialog(this, "홈 화면 기능이 구현될 예정입니다."); // 홈 화면 구현 필요
+        } else if (buttonName.equals("MY")) {
+            JOptionPane.showMessageDialog(this, "현재 My Page 화면입니다.");
+        }
+    }
+
+    // 회원 탈퇴 메서드
+    private void deleteAccount() {
+        int confirmation = JOptionPane.showConfirmDialog(this, "정말로 회원 탈퇴하시겠습니까?", "회원 탈퇴 확인", JOptionPane.YES_NO_OPTION);
+        if (confirmation == JOptionPane.YES_OPTION) {
+            try (Connection conn = DatabaseConnection.getConnection()) {
+                String query = "DELETE FROM users WHERE username = ?";
+                PreparedStatement stmt = conn.prepareStatement(query);
+                stmt.setString(1, username);
+                int rowsAffected = stmt.executeUpdate();
+
+                if (rowsAffected > 0) {
+                    JOptionPane.showMessageDialog(this, "회원 탈퇴가 완료되었습니다.");
+                    new LoginForm();
+                    dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, "회원 탈퇴에 실패했습니다. 다시 시도해 주세요.");
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "회원 탈퇴 중 오류가 발생했습니다: " + ex.getMessage());
+            }
+        }
+    }
+
+    public void updateProfileImage(ImageIcon imageIcon, String imagePath) {
+        if (imageIcon != null) {
+            imageIcon.setDescription(imagePath); // 경로 저장
+            Image img = imageIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH);
+            profilePic.setIcon(new ImageIcon(img));
+            profilePic.setText(""); // 텍스트 제거
+        } else {
+            profilePic.setIcon(null);
+            profilePic.setText("No Image");
+        }
+    }
+
+
+    
+    private String getProfileImagePathFromDatabase() {
+        String imagePath = null;
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT profile_image FROM users WHERE username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                imagePath = rs.getString("profile_image"); // 이미지 경로 가져오기
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "프로필 이미지를 불러오는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+        return imagePath;
+    }
+    
+    private void setProfileImage() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT profile_image FROM users WHERE username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                String dbImagePath = rs.getString("profile_image");
+                if (dbImagePath != null && !dbImagePath.isEmpty()) {
+                    ImageIcon imageIcon = new ImageIcon(dbImagePath);
+                    imageIcon.setDescription(dbImagePath); // 경로 저장
+                    updateProfileImage(imageIcon, dbImagePath);
+                } else {
+                    updateProfileImage(null, null); // 기본 이미지 설정
+                }
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+
+
+
+
+    // 닉네임 업데이트 메서드
+    public void updateNickname(String newNickname) {
+        this.nickname = newNickname;
+        nicknameLabel.setText("닉네임: " + newNickname); // 라벨 텍스트 갱신
+    }
+
+    public String getNickname() {
+        return nickname;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+} //마이페이지 원본
