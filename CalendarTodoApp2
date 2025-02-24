@@ -1,0 +1,443 @@
+package teampj;
+
+import javax.swing.*;
+import javax.swing.border.LineBorder;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.*;
+
+// CalendarTodoApp2 클래스
+public class CalendarTodoApp2 {
+    private JFrame frame;
+    private JPanel calendarPanel;
+    private DefaultListModel<TodoItem> todoModel;
+    private DefaultListModel<String> searchResultsModel;
+    private JList<TodoItem> todoList;
+    private JList<String> searchResultsList;
+    private JLabel profileLabel;
+    private JLabel nicknameLabel;
+    private JLabel monthLabel;
+    private JTextField searchField;
+    private Map<String, ArrayList<TodoItem>> todoData;
+    private Calendar calendar;
+    private String username;
+    private String nickname;
+    private ImageIcon profilePicture;
+    private String currentSelectedDate;
+
+    public CalendarTodoApp2(String username) {
+        this.username = username;
+        frame = new JFrame("달력");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(800, 700);
+        frame.setLayout(new BorderLayout());
+
+        todoModel = new DefaultListModel<>();
+        searchResultsModel = new DefaultListModel<>();
+        todoList = new JList<>(todoModel);
+        searchResultsList = new JList<>(searchResultsModel);
+
+        // Custom renderer 설정
+        todoList.setCellRenderer(new TodoItemRenderer());
+        todoList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int index = todoList.locationToIndex(e.getPoint());
+                if (index >= 0) {
+                    TodoItem item = todoModel.getElementAt(index);
+                    item.setCompleted(!item.isCompleted()); // 완료 상태 토글
+                    updateTodoInDatabase(item); // 데이터베이스 업데이트
+                    todoList.repaint(); // 목록 다시 그리기
+                }
+            }
+        });
+
+        profileLabel = new JLabel();
+        nicknameLabel = new JLabel();
+        searchField = new JTextField(15);
+        todoData = new HashMap<>();
+        calendar = new GregorianCalendar();
+
+        loadUserProfile();
+        initializeUI();
+        loadTodoData();
+    }
+
+    private void initializeUI() {
+        JPanel mainPanel = new JPanel(new BorderLayout());
+
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        monthLabel = new JLabel("", SwingConstants.CENTER);
+        JButton prevButton = new JButton("이전 달");
+        JButton nextButton = new JButton("다음 달");
+
+        prevButton.addActionListener(e -> changeMonth(-1));
+        nextButton.addActionListener(e -> changeMonth(1));
+
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(prevButton, BorderLayout.WEST);
+        topPanel.add(monthLabel, BorderLayout.CENTER);
+        topPanel.add(nextButton, BorderLayout.EAST);
+        headerPanel.add(topPanel, BorderLayout.NORTH);
+
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        searchPanel.add(new JLabel("검색: "));
+        searchPanel.add(searchField);
+        headerPanel.add(searchPanel, BorderLayout.SOUTH);
+
+        searchField.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                updateSearchResults(searchField.getText());
+            }
+        });
+
+        calendarPanel = new JPanel(new GridLayout(0, 7));
+        updateCalendar();
+
+        JPanel searchResultsPanel = new JPanel(new BorderLayout());
+        JScrollPane searchResultsScrollPane = new JScrollPane(searchResultsList);
+        searchResultsList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        searchResultsPanel.add(searchResultsScrollPane, BorderLayout.CENTER);
+
+        JPanel bottomPanel = setupBottomPanel();
+
+        mainPanel.add(headerPanel, BorderLayout.NORTH);
+        mainPanel.add(calendarPanel, BorderLayout.CENTER);
+        mainPanel.add(searchResultsPanel, BorderLayout.EAST);
+        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+
+        JPanel navBarPanel = new JPanel(new GridLayout(1, 3));
+        JButton menuButton = new JButton("MENU");
+        JButton homeButton = new JButton("HOME");
+        JButton myButton = new JButton("MY");
+
+        menuButton.addActionListener(e -> {
+            new MenuScreen(username, nickname);
+            frame.dispose();
+        });
+
+        homeButton.addActionListener(e -> {
+            new CalendarTodoApp2(username);
+            frame.dispose();
+        });
+
+        myButton.addActionListener(e -> {
+            new Mypage(username, nickname);
+            frame.dispose();
+        });
+
+        navBarPanel.add(menuButton);
+        navBarPanel.add(homeButton);
+        navBarPanel.add(myButton);
+
+        frame.add(mainPanel, BorderLayout.CENTER);
+        frame.add(navBarPanel, BorderLayout.SOUTH);
+        frame.setVisible(true);
+    }
+
+    private JPanel setupBottomPanel() {
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+
+        // 프로필 영역 설정
+        profileLabel.setPreferredSize(new Dimension(100, 100)); // 크기 조정
+        profileLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        profileLabel.setBorder(new LineBorder(Color.GRAY));
+
+        if (profilePicture != null) {
+            profileLabel.setIcon(profilePicture); // 설정된 크기의 프로필 이미지 사용
+        } else {
+            ImageIcon defaultIcon = new ImageIcon("default_profile.png");
+            Image resizedDefault = defaultIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH);
+            profileLabel.setIcon(new ImageIcon(resizedDefault)); // 기본 이미지를 100x100 크기로 설정
+        }
+
+        nicknameLabel.setText(nickname);
+        nicknameLabel.setFont(new Font("Malgun Gothic", Font.BOLD, 14));
+        nicknameLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        JPanel profilePanel = new JPanel(new BorderLayout());
+        profilePanel.setPreferredSize(new Dimension(100, 100)); // 프로필 영역 크기 고정
+        profilePanel.add(profileLabel, BorderLayout.CENTER);
+        profilePanel.add(nicknameLabel, BorderLayout.SOUTH);
+
+        // 투두 리스트 영역 및 기타 코드는 변경하지 않음
+        JScrollPane todoScrollPane = new JScrollPane(todoList);
+        todoScrollPane.setPreferredSize(new Dimension(250, 150)); // 고정된 크기 설정
+
+        JPanel todoButtonPanel = new JPanel();
+        JButton addButton = new JButton("추가");
+        JButton editButton = new JButton("편집");
+        JButton deleteButton = new JButton("삭제");
+
+        addButton.addActionListener(e -> addTodoItem());
+        editButton.addActionListener(e -> editTodoItem());
+        deleteButton.addActionListener(e -> deleteTodoItem());
+
+        todoButtonPanel.add(addButton);
+        todoButtonPanel.add(editButton);
+        todoButtonPanel.add(deleteButton);
+
+        bottomPanel.add(profilePanel, BorderLayout.WEST);
+        bottomPanel.add(todoScrollPane, BorderLayout.CENTER);
+        bottomPanel.add(todoButtonPanel, BorderLayout.SOUTH);
+
+        return bottomPanel;
+    }
+
+
+
+    private void loadUserProfile() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT nickname, profile_image FROM users WHERE username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                nickname = rs.getString("nickname");
+                String imagePath = rs.getString("profile_image");
+                if (imagePath != null && !imagePath.isEmpty()) {
+                    ImageIcon rawIcon = new ImageIcon(imagePath);
+                    Image resizedImage = rawIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH); // 크기 조정
+                    profilePicture = new ImageIcon(resizedImage); // 조정된 이미지를 설정
+                } else {
+                    ImageIcon defaultIcon = new ImageIcon("default_profile.png");
+                    Image resizedDefault = defaultIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH); // 기본 이미지 크기 조정
+                    profilePicture = new ImageIcon(resizedDefault);
+                }
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "프로필 정보를 불러오는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+
+    private void changeMonth(int delta) {
+        calendar.add(Calendar.MONTH, delta);
+        updateCalendar();
+
+    }
+
+    private void updateCalendar() {
+        calendarPanel.removeAll();
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        int firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK);
+        int daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH);
+
+        monthLabel.setText(String.format("%tB %tY", calendar, calendar));
+
+        String[] dayNames = {"일", "월", "화", "수", "목", "금", "토"};
+        for (String dayName : dayNames) {
+            calendarPanel.add(new JLabel(dayName, SwingConstants.CENTER));
+        }
+
+        for (int i = 1; i < firstDayOfWeek; i++) {
+            calendarPanel.add(new JLabel(""));
+        }
+
+        for (int day = 1; day <= daysInMonth; day++) {
+            JButton dayButton = new JButton(String.valueOf(day));
+            dayButton.addActionListener(e -> {
+                String selectedDay = ((JButton) e.getSource()).getText();
+                loadTodoForDate(selectedDay);
+            });
+            calendarPanel.add(dayButton);
+        }
+
+        calendarPanel.revalidate();
+        calendarPanel.repaint();
+    }
+
+    private void loadTodoForDate(String date) {
+        try {
+            int day = Integer.parseInt(date);
+            calendar.set(Calendar.DAY_OF_MONTH, day);
+
+            currentSelectedDate = String.format("%1$tY-%1$tm-%1$td", calendar);
+            todoModel.clear();
+            ArrayList<TodoItem> todos = todoData.getOrDefault(currentSelectedDate, new ArrayList<>());
+            todos.forEach(todoModel::addElement);
+
+            frame.setTitle("Todo List for " + currentSelectedDate);
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "날짜 처리 중 오류가 발생했습니다: " + e.getMessage());
+        }
+    }
+
+    private void addTodoItem() {
+        String newItem = JOptionPane.showInputDialog(frame, "할 일:");
+        if (newItem != null && !newItem.trim().isEmpty() && currentSelectedDate != null) {
+            TodoItem todoItem = new TodoItem(newItem, false);
+            saveTodoToDatabase(todoItem);
+            loadTodoData();
+        }
+    }
+
+    private void saveTodoToDatabase(TodoItem todoItem) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String insertQuery = "INSERT INTO todo_items (username, date, todo_text, completed) VALUES (?, ?, ?, ?)";
+            PreparedStatement insertStmt = conn.prepareStatement(insertQuery);
+            insertStmt.setString(1, username);
+            insertStmt.setString(2, currentSelectedDate);
+            insertStmt.setString(3, todoItem.getText());
+            insertStmt.setBoolean(4, todoItem.isCompleted());
+            insertStmt.executeUpdate();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "할 일 데이터를 저장하는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+    private void editTodoItem() {
+        int selectedIndex = todoList.getSelectedIndex();
+        if (selectedIndex >= 0) {
+            TodoItem currentItem = todoList.getSelectedValue();
+            String updatedText = JOptionPane.showInputDialog(frame, "할 일 편집:", currentItem.getText());
+            if (updatedText != null && !updatedText.trim().isEmpty() && currentSelectedDate != null) {
+                currentItem.setText(updatedText);
+                updateTodoInDatabase(currentItem);
+                loadTodoData();
+            }
+        } else {
+            JOptionPane.showMessageDialog(frame, "편집할 할 일을 선택해주세요.");
+        }
+    }
+
+    private void updateTodoInDatabase(TodoItem todoItem) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String updateQuery = "UPDATE todo_items SET todo_text = ?, completed = ? WHERE username = ? AND date = ? AND todo_text = ?";
+            PreparedStatement updateStmt = conn.prepareStatement(updateQuery);
+            updateStmt.setString(1, todoItem.getText());
+            updateStmt.setBoolean(2, todoItem.isCompleted());
+            updateStmt.setString(3, username);
+            updateStmt.setString(4, currentSelectedDate);
+            updateStmt.setString(5, todoItem.getText());
+            updateStmt.executeUpdate();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "할 일 데이터를 수정하는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+    private void deleteTodoItem() {
+        int selectedIndex = todoList.getSelectedIndex();
+        if (selectedIndex >= 0) {
+            TodoItem itemToDelete = todoList.getSelectedValue();
+            deleteTodoFromDatabase(itemToDelete);
+            loadTodoData();
+        } else {
+            JOptionPane.showMessageDialog(frame, "삭제할 할 일을 선택해주세요.");
+        }
+    }
+
+    private void deleteTodoFromDatabase(TodoItem todoItem) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String deleteQuery = "DELETE FROM todo_items WHERE username = ? AND date = ? AND todo_text = ?";
+            PreparedStatement deleteStmt = conn.prepareStatement(deleteQuery);
+            deleteStmt.setString(1, username);
+            deleteStmt.setString(2, currentSelectedDate);
+            deleteStmt.setString(3, todoItem.getText());
+            deleteStmt.executeUpdate();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "할 일 데이터를 삭제하는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+    private void updateSearchResults(String query) {
+        searchResultsModel.clear();
+        if (query.isEmpty()) return;
+
+        for (Map.Entry<String, ArrayList<TodoItem>> entry : todoData.entrySet()) {
+            String date = entry.getKey();
+            for (TodoItem todo : entry.getValue()) {
+                if (todo.getText().toLowerCase().contains(query.toLowerCase())) {
+                    searchResultsModel.addElement(date + ": " + todo.getText());
+                }
+            }
+        }
+    }
+
+    private void loadTodoData() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT date, todo_text, completed FROM todo_items WHERE username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            todoData.clear();
+            todoModel.clear();
+            while (rs.next()) {
+                String date = rs.getString("date");
+                String todoText = rs.getString("todo_text");
+                boolean completed = rs.getBoolean("completed");
+                TodoItem todoItem = new TodoItem(todoText, completed);
+
+                todoData.computeIfAbsent(date, k -> new ArrayList<>()).add(todoItem);
+
+                if (date.equals(currentSelectedDate)) {
+                    todoModel.addElement(todoItem);
+                }
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "할 일 데이터를 불러오는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+    public static void main(String[] args) {
+        String loggedInUsername = "exampleUser";
+        SwingUtilities.invokeLater(() -> new CalendarTodoApp2(loggedInUsername));
+    }
+}
+
+// TodoItem 클래스
+class TodoItem {
+    private String text;
+    private boolean completed;
+
+    public TodoItem(String text, boolean completed) {
+        this.text = text;
+        this.completed = completed;
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    public void setText(String text) {
+        this.text = text;
+    }
+
+    public boolean isCompleted() {
+        return completed;
+    }
+
+    public void setCompleted(boolean completed) {
+        this.completed = completed;
+    }
+
+    @Override
+    public String toString() {
+        return (completed ? "[완료] " : "") + text;
+    }
+}
+
+// TodoItemRenderer 클래스
+class TodoItemRenderer extends JCheckBox implements ListCellRenderer<TodoItem> {
+    @Override
+    public Component getListCellRendererComponent(JList<? extends TodoItem> list, TodoItem value, int index, boolean isSelected, boolean cellHasFocus) {
+        setText(value.getText());
+        setSelected(value.isCompleted());
+        setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+        setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+        return this;
+    }
+}
