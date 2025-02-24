@@ -1,0 +1,143 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class MenuScreen extends JFrame {
+    private String username;
+    private String nickname;
+
+    public MenuScreen(String username, String nickname) {
+        this.username = username;
+        this.nickname = nickname;
+        setTitle("Menu");
+        setSize(400, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBackground(Color.WHITE);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(30, 30, 30, 30));
+
+        JLabel titleLabel = new JLabel("MENU");
+        titleLabel.setFont(new Font("Malgun Gothic", Font.BOLD, 24));
+        titleLabel.setForeground(new Color(144, 238, 144));
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        mainPanel.add(titleLabel);
+
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+        addMenuItem(mainPanel, "나의 캘린더");
+        //addMenuItem(mainPanel, "나의 TO-DO");
+        //addMenuItem(mainPanel, "모두의 TO-DO");
+        addMenuItem(mainPanel, ".");
+        addMenuItem(mainPanel, ".");
+        addMenuItem(mainPanel, "팀 프로젝트");
+
+        add(mainPanel, BorderLayout.CENTER);
+
+        JPanel navBar = new JPanel();
+        navBar.setLayout(new GridLayout(1, 3));
+        navBar.setBackground(Color.WHITE);
+        navBar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 230, 200)));
+
+        addNavButton(navBar, "MENU");
+        addNavButton(navBar, "HOME");
+        addNavButton(navBar, "MY");
+
+        add(navBar, BorderLayout.SOUTH);
+
+        setVisible(true);
+    }
+
+    private void addMenuItem(JPanel panel, String text) {
+        JButton menuButton = new JButton(text);
+        menuButton.setFont(new Font("Malgun Gothic", Font.PLAIN, 16));
+        menuButton.setFocusPainted(false);
+        menuButton.setContentAreaFilled(false);
+        menuButton.setBorderPainted(false);
+        menuButton.setHorizontalAlignment(SwingConstants.LEFT);
+        menuButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        menuButton.addActionListener(new MenuButtonListener(text));
+        panel.add(menuButton);
+
+        panel.add(Box.createRigidArea(new Dimension(0, 5)));
+        JSeparator separator = new JSeparator();
+        separator.setForeground(new Color(200, 230, 200));
+        panel.add(separator);
+        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+    }
+
+    private void addNavButton(JPanel panel, String text) {
+        JButton navButton = new JButton(text);
+        navButton.setFont(new Font("Malgun Gothic", Font.PLAIN, 14));
+        navButton.setFocusPainted(false);
+        navButton.setContentAreaFilled(false);
+        navButton.setBorderPainted(false);
+        navButton.addActionListener(new NavButtonListener(text));
+        panel.add(navButton);
+    }
+
+    private class MenuButtonListener implements ActionListener {
+        private String menuName;
+
+        public MenuButtonListener(String menuName) {
+            this.menuName = menuName;
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (menuName.equals("나의 캘린더")) {
+                new CalendarTodoApp2(username); // CalendarTodoApp2 화면으로 전환
+                dispose();
+            } else if (menuName.equals("팀 프로젝트")) {
+                checkUserTeams();
+            } else {
+                JOptionPane.showMessageDialog(null, menuName + " 선택됨");
+            }
+        }
+    }
+
+    private void checkUserTeams() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT team_id FROM team_members WHERE username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            if (!rs.next()) {
+                new TeamCreationScreen(username); // 팀 생성 화면으로 이동
+            } else {
+                new TeamSelectionScreen(username); // 팀 선택 화면으로 이동
+            }
+            dispose();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "팀 정보를 불러오는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+    private class NavButtonListener implements ActionListener {
+        private String buttonName;
+
+        public NavButtonListener(String buttonName) {
+            this.buttonName = buttonName;
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (buttonName.equals("MY")) {
+                new Mypage(username, nickname); // Mypage 화면으로 전환
+                dispose();
+            } else {
+                JOptionPane.showMessageDialog(null, buttonName + " 버튼 클릭됨");
+            }
+        }
+    }
+}
