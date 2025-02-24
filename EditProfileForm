@@ -1,0 +1,155 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.File;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+
+public class EditProfileForm extends JFrame {
+    private JTextField nicknameField;
+    private JButton chooseImageButton;
+    private JButton saveButton;
+    private JLabel profileImageLabel;
+    private Mypage mypage; // Mypage 객체 참조
+    private String imagePath; // 새로 선택한 이미지 경로
+    private String initialImagePath; // 초기 이미지 경로
+
+    public EditProfileForm(Mypage mypage) {
+        this.mypage = mypage;
+        this.initialImagePath = (mypage.getProfileImageIcon() != null && mypage.getProfileImageIcon().getDescription() != null)
+                ? mypage.getProfileImageIcon().getDescription()
+                : null;
+
+
+        setTitle("프로필 편집");
+        setSize(400, 300);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        // 메인 패널
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBackground(Color.WHITE);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // 프로필 이미지
+        profileImageLabel = new JLabel();
+        profileImageLabel.setOpaque(true);
+        profileImageLabel.setBackground(new Color(200, 160, 255)); // 기본 프로필 색상
+        profileImageLabel.setPreferredSize(new Dimension(100, 100));
+        profileImageLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        loadInitialProfileImage();
+        mainPanel.add(profileImageLabel);
+
+        // 이미지 선택 버튼
+        chooseImageButton = new JButton("이미지 선택");
+        chooseImageButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        chooseImageButton.addActionListener(e -> chooseImage());
+        mainPanel.add(chooseImageButton);
+
+        // 닉네임 입력 필드
+        nicknameField = new JTextField(mypage.getNickname()); // 기존 닉네임 로드
+        nicknameField.setMaximumSize(new Dimension(300, 40));
+        nicknameField.setBorder(BorderFactory.createTitledBorder("닉네임"));
+        mainPanel.add(nicknameField);
+
+        // 저장 버튼
+        saveButton = new JButton("저장");
+        saveButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        saveButton.addActionListener(e -> saveProfileData());
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        mainPanel.add(saveButton);
+
+        add(mainPanel, BorderLayout.CENTER);
+        setVisible(true);
+    }
+
+ // 초기 프로필 이미지 로드
+    private void loadInitialProfileImage() {
+        ImageIcon profileIcon = mypage.getProfileImageIcon();
+        if (profileIcon != null) {
+            Image img = profileIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH);
+            profileImageLabel.setIcon(new ImageIcon(img));
+            profileImageLabel.setText("");
+        } else {
+            profileImageLabel.setText("No Image");
+        }
+    }
+
+
+
+
+ // 이미지 선택 메서드
+    private void chooseImage() {
+        JFileChooser fileChooser = new JFileChooser();
+        int result = fileChooser.showOpenDialog(null);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            imagePath = selectedFile.getAbsolutePath(); // 이미지 파일 경로를 저장
+            ImageIcon imageIcon = new ImageIcon(imagePath);
+            Image img = imageIcon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH);
+            profileImageLabel.setIcon(new ImageIcon(img));
+            profileImageLabel.setText("");
+        }
+    }
+
+
+    private void saveProfileData() {
+        String newNickname = nicknameField.getText();
+
+        // 이미지 경로 설정: imagePath가 비어 있으면 initialImagePath를 유지
+        String finalImagePath = (imagePath != null && !imagePath.isEmpty()) ? imagePath : initialImagePath;
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // 닉네임은 항상 업데이트, 이미지 경로는 수정이 필요한 경우에만 업데이트
+            String query;
+
+            if (imagePath == null || imagePath.isEmpty()) {
+                // 이미지 경로를 수정하지 않음 (닉네임만 업데이트)
+                query = "UPDATE users SET nickname = ? WHERE username = ?";
+            } else {
+                // 이미지 경로를 수정 (닉네임과 이미지 경로 모두 업데이트)
+                query = "UPDATE users SET nickname = ?, profile_image = ? WHERE username = ?";
+            }
+
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, newNickname);
+
+            if (imagePath == null || imagePath.isEmpty()) {
+                // 이미지 경로를 수정하지 않는 경우
+                stmt.setString(2, mypage.getUsername());
+            } else {
+                // 이미지 경로를 수정하는 경우
+                stmt.setString(2, finalImagePath);
+                stmt.setString(3, mypage.getUsername());
+            }
+
+            stmt.executeUpdate();
+
+            // 업데이트 후 Mypage 데이터 변경
+            mypage.updateNickname(newNickname);
+
+            if (finalImagePath != null && !finalImagePath.isEmpty()) {
+                // 새로운 이미지가 선택된 경우 업데이트
+                ImageIcon updatedIcon = new ImageIcon(new ImageIcon(finalImagePath).getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH));
+                mypage.updateProfileImage(updatedIcon, finalImagePath);
+            }
+
+            JOptionPane.showMessageDialog(this, "프로필이 성공적으로 저장되었습니다.");
+            dispose();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "프로필 저장 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+
+
+
+
+
+
+}
