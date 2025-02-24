@@ -1,0 +1,238 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+
+public class TeamSelectionScreen extends JFrame {
+    private String username;
+    private ArrayList<String> teams;
+
+    public TeamSelectionScreen(String username) {
+        this.username = username;
+        setTitle("Team Selection");
+        setSize(500, 400);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        // 팀 정보를 불러오는 메서드 호출
+        loadUserTeams();
+
+        // 메인 패널 설정
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBackground(Color.WHITE);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        if (teams.isEmpty()) {
+            JLabel noTeamLabel = new JLabel("속해있는 팀이 없습니다.");
+            noTeamLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 16));
+            noTeamLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            mainPanel.add(noTeamLabel);
+
+            JButton createTeamButton = new JButton("팀 생성");
+            createTeamButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+            createTeamButton.addActionListener(e -> {
+                dispose(); // 기존 창 닫기
+                new TeamCreationScreen(username);
+            });
+            mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+            mainPanel.add(createTeamButton);
+        } else {
+            JLabel selectTeamLabel = new JLabel("팀을 선택하세요");
+            selectTeamLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 16));
+            selectTeamLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            mainPanel.add(selectTeamLabel);
+
+            for (String team : teams) {
+                JButton teamButton = new JButton(team);
+                teamButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+                teamButton.addActionListener(e -> new TeamProjectScreen(username, team));
+                mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+                mainPanel.add(teamButton);
+            }
+
+            // JScrollPane 추가
+            JScrollPane scrollPane = new JScrollPane(mainPanel);
+            scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            add(scrollPane, BorderLayout.CENTER);
+
+            JLabel leaveTeamLabel = new JLabel("탈퇴할 팀 선택");
+            leaveTeamLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 14));
+            leaveTeamLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            mainPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+            mainPanel.add(leaveTeamLabel);
+
+            JComboBox<String> teamDropdown = new JComboBox<>(teams.toArray(new String[0]));
+            teamDropdown.setAlignmentX(Component.CENTER_ALIGNMENT);
+            mainPanel.add(teamDropdown);
+
+            JButton leaveTeamButton = new JButton("팀 탈퇴");
+            leaveTeamButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+            leaveTeamButton.addActionListener(e -> leaveTeam((String) teamDropdown.getSelectedItem()));
+            mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+            mainPanel.add(leaveTeamButton);
+
+            JButton createTeamButton = new JButton("새로운 팀 생성");
+            createTeamButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+            createTeamButton.addActionListener(e -> {
+                dispose(); // 기존 창 닫기
+                new TeamCreationScreen(username);
+            });
+            mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+            mainPanel.add(createTeamButton);
+        }
+
+        setVisible(true);
+    }
+    
+    private void leaveTeam(String teamName) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // 현재 팀의 팀원 수 확인
+            String getMemberCountQuery = "SELECT COUNT(*) AS member_count FROM team_members WHERE team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+            PreparedStatement memberCountStmt = conn.prepareStatement(getMemberCountQuery);
+            memberCountStmt.setString(1, teamName);
+            ResultSet memberCountRs = memberCountStmt.executeQuery();
+
+            if (memberCountRs.next() && memberCountRs.getInt("member_count") == 1) {
+                // 팀에 팀장 한 명만 존재하는 경우
+                int confirm = JOptionPane.showConfirmDialog(
+                    this,
+                    "팀에 팀장만 남아 있습니다. 팀을 삭제하시겠습니까?",
+                    "팀 삭제 확인",
+                    JOptionPane.YES_NO_OPTION
+                );
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    // 1. 프로젝트 일정 삭제
+                    String deleteSchedulesQuery = "DELETE FROM team_project_schedules WHERE team_name = ?";
+                    PreparedStatement deleteSchedulesStmt = conn.prepareStatement(deleteSchedulesQuery);
+                    deleteSchedulesStmt.setString(1, teamName);
+                    deleteSchedulesStmt.executeUpdate();
+
+                    // 2. 팀원 데이터 삭제
+                    String deleteTeamMembersQuery = "DELETE FROM team_members WHERE team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                    PreparedStatement deleteTeamMembersStmt = conn.prepareStatement(deleteTeamMembersQuery);
+                    deleteTeamMembersStmt.setString(1, teamName);
+                    deleteTeamMembersStmt.executeUpdate();
+
+                    // 3. 팀 삭제
+                    String deleteTeamQuery = "DELETE FROM teams WHERE team_name = ?";
+                    PreparedStatement deleteTeamStmt = conn.prepareStatement(deleteTeamQuery);
+                    deleteTeamStmt.setString(1, teamName);
+                    deleteTeamStmt.executeUpdate();
+
+                    JOptionPane.showMessageDialog(this, "팀이 삭제되었습니다.");
+                    dispose();
+                    new TeamSelectionScreen(username); // 팀 삭제 후 화면 갱신
+                    return;
+                } else {
+                    JOptionPane.showMessageDialog(this, "팀 삭제를 취소했습니다.");
+                    return;
+                }
+            }
+
+            // 팀장이 아닌 경우 처리
+            String getLeaderQuery = "SELECT leader_username FROM teams WHERE team_name = ?";
+            PreparedStatement leaderStmt = conn.prepareStatement(getLeaderQuery);
+            leaderStmt.setString(1, teamName);
+            ResultSet leaderRs = leaderStmt.executeQuery();
+
+            if (leaderRs.next() && leaderRs.getString("leader_username").equals(username)) {
+                // 팀장이 탈퇴하려면 새로운 팀장을 지정해야 함
+                String newLeaderUsername = JOptionPane.showInputDialog(this, "새로운 팀장의 사용자 ID를 입력하세요:");
+                if (newLeaderUsername == null || newLeaderUsername.trim().isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "새 팀장을 지정해야 합니다.");
+                    return;
+                }
+
+                // 새 팀장이 유효한지 확인
+                String checkUserQuery = "SELECT COUNT(*) FROM team_members WHERE username = ? " +
+                        "AND team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                PreparedStatement checkUserStmt = conn.prepareStatement(checkUserQuery);
+                checkUserStmt.setString(1, newLeaderUsername);
+                checkUserStmt.setString(2, teamName);
+                ResultSet checkUserRs = checkUserStmt.executeQuery();
+
+                if (checkUserRs.next() && checkUserRs.getInt(1) == 0) {
+                    JOptionPane.showMessageDialog(this, "유효하지 않은 사용자 ID입니다.");
+                    return;
+                }
+
+                // leader_username을 새 팀장으로 업데이트
+                String updateLeaderQuery = "UPDATE teams SET leader_username = ? WHERE team_name = ?";
+                PreparedStatement updateLeaderStmt = conn.prepareStatement(updateLeaderQuery);
+                updateLeaderStmt.setString(1, newLeaderUsername);
+                updateLeaderStmt.setString(2, teamName);
+                updateLeaderStmt.executeUpdate();
+
+                // 새 팀장의 role을 'leader'로 변경
+                String updateNewLeaderRoleQuery = "UPDATE team_members SET role = 'leader' WHERE username = ? " +
+                        "AND team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                PreparedStatement updateRoleStmt = conn.prepareStatement(updateNewLeaderRoleQuery);
+                updateRoleStmt.setString(1, newLeaderUsername);
+                updateRoleStmt.setString(2, teamName);
+                updateRoleStmt.executeUpdate();
+
+                // 현재 팀장의 role을 'member'로 변경
+                String updateOldLeaderRoleQuery = "UPDATE team_members SET role = 'member' WHERE username = ? " +
+                        "AND team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                PreparedStatement updateOldRoleStmt = conn.prepareStatement(updateOldLeaderRoleQuery);
+                updateOldRoleStmt.setString(1, username);
+                updateOldRoleStmt.setString(2, teamName);
+                updateOldRoleStmt.executeUpdate();
+
+                // 현재 팀장 탈퇴 처리
+                String deleteQuery = "DELETE FROM team_members WHERE username = ? " +
+                        "AND team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                PreparedStatement deleteStmt = conn.prepareStatement(deleteQuery);
+                deleteStmt.setString(1, username);
+                deleteStmt.setString(2, teamName);
+                deleteStmt.executeUpdate();
+
+                JOptionPane.showMessageDialog(this, "팀을 탈퇴했으며, 새 팀장이 지정되었습니다.");
+            } else {
+                // 일반 팀원이 탈퇴하는 경우
+                String deleteQuery = "DELETE FROM team_members WHERE username = ? " +
+                        "AND team_id = (SELECT team_id FROM teams WHERE team_name = ?)";
+                PreparedStatement stmt = conn.prepareStatement(deleteQuery);
+                stmt.setString(1, username);
+                stmt.setString(2, teamName);
+                stmt.executeUpdate();
+                JOptionPane.showMessageDialog(this, "팀을 탈퇴했습니다.");
+            }
+
+            dispose();
+            new TeamSelectionScreen(username); // 탈퇴 후 화면 갱신
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "팀 탈퇴 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+
+
+
+
+    private void loadUserTeams() {
+        teams = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT t.team_name FROM team_members m " +
+                    "JOIN teams t ON m.team_id = t.team_id " +
+                    "WHERE m.username = ?";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                teams.add(rs.getString("team_name"));
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "팀 정보를 불러오는 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+}
