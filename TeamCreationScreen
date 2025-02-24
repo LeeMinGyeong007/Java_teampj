@@ -1,0 +1,123 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+
+public class TeamCreationScreen extends JFrame {
+    private String username;
+    private JTextField teamNameField;
+    private JTextField memberIdsField;
+
+    public TeamCreationScreen(String username) {
+        this.username = username;
+        setTitle("Create New Team");
+        setSize(400, 300);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBackground(Color.WHITE);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        JLabel teamNameLabel = new JLabel("팀 이름:");
+        teamNameLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 14));
+        teamNameField = new JTextField();
+        teamNameField.setMaximumSize(new Dimension(300, 30));
+        mainPanel.add(teamNameLabel);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        mainPanel.add(teamNameField);
+
+        JLabel memberIdsLabel = new JLabel("팀원 ID (쉼표로 구분):");
+        memberIdsLabel.setFont(new Font("Malgun Gothic", Font.PLAIN, 14));
+        memberIdsField = new JTextField();
+        memberIdsField.setMaximumSize(new Dimension(300, 30));
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        mainPanel.add(memberIdsLabel);
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        mainPanel.add(memberIdsField);
+
+        JButton createButton = new JButton("팀 생성");
+        createButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        createButton.addActionListener(e -> createTeam());
+        mainPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        mainPanel.add(createButton);
+
+        add(mainPanel, BorderLayout.CENTER);
+        setVisible(true);
+    }
+
+    private void createTeam() {
+        String teamName = teamNameField.getText().trim();
+        String[] memberIds = memberIdsField.getText().trim().split(",");
+
+        if (teamName.isEmpty() || memberIds.length == 0) {
+            JOptionPane.showMessageDialog(this, "팀 이름과 팀원을 입력해 주세요.");
+            return;
+        }
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // 중복 팀명 체크
+            String checkTeamNameQuery = "SELECT COUNT(*) FROM teams WHERE team_name = ?";
+            PreparedStatement checkStmt = conn.prepareStatement(checkTeamNameQuery);
+            checkStmt.setString(1, teamName);
+            ResultSet checkRs = checkStmt.executeQuery();
+            if (checkRs.next() && checkRs.getInt(1) > 0) {
+                JOptionPane.showMessageDialog(this, "이미 존재하는 팀명입니다.");
+                return;
+            }
+
+            // 팀 생성
+            String createTeamQuery = "INSERT INTO teams (team_name, leader_username) VALUES (?, ?)";
+            PreparedStatement teamStmt = conn.prepareStatement(createTeamQuery, PreparedStatement.RETURN_GENERATED_KEYS);
+            teamStmt.setString(1, teamName);
+            teamStmt.setString(2, username);
+            teamStmt.executeUpdate();
+            ResultSet rs = teamStmt.getGeneratedKeys();
+            int teamId = rs.next() ? rs.getInt(1) : -1;
+
+            // 팀원 추가
+            String addMemberQuery = "INSERT INTO team_members (team_id, username, role) VALUES (?, ?, ?)";
+            PreparedStatement memberStmt = conn.prepareStatement(addMemberQuery);
+
+            // 팀장 추가
+            memberStmt.setInt(1, teamId);
+            memberStmt.setString(2, username);
+            memberStmt.setString(3, "leader");
+            memberStmt.executeUpdate();
+
+            // 팀원 추가 (팀장의 username 제외 및 유효성 검사)
+            for (String memberId : memberIds) {
+                memberId = memberId.trim();
+                if (!memberId.isEmpty() && !memberId.equals(username)) { // 팀장 제외
+                    // 유효한 사용자인지 체크
+                    String checkUserQuery = "SELECT COUNT(*) FROM users WHERE username = ?";
+                    PreparedStatement userCheckStmt = conn.prepareStatement(checkUserQuery);
+                    userCheckStmt.setString(1, memberId);
+                    ResultSet userCheckRs = userCheckStmt.executeQuery();
+                    if (userCheckRs.next() && userCheckRs.getInt(1) == 0) {
+                        JOptionPane.showMessageDialog(this, "유효하지 않은 사용자 ID: " + memberId);
+                        continue;
+                    }
+                    memberStmt.setInt(1, teamId);
+                    memberStmt.setString(2, memberId);
+                    memberStmt.setString(3, "member");
+                    memberStmt.executeUpdate();
+                }
+            }
+
+            JOptionPane.showMessageDialog(this, "팀이 성공적으로 생성되었습니다.");
+            dispose();
+            new TeamSelectionScreen(username); // 새로 생성된 팀이 반영되도록 TeamSelectionScreen을 다시 엽니다.
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "팀 생성 중 오류가 발생했습니다: " + ex.getMessage());
+        }
+    }
+}
+
