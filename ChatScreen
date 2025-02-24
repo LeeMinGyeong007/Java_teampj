@@ -1,0 +1,199 @@
+package teampj;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ChatScreen extends JFrame {
+    private String teamName; // 팀 이름
+    private String nickname; // 닉네임
+    private List<ChatMessage> chatMessages = new ArrayList<>();
+    private JPanel chatPanel; // 채팅 메시지를 표시하는 패널
+    private JScrollPane scrollPane; // 스크롤 가능 영역
+    private JTextField messageField; // 메시지 입력 필드
+
+    public ChatScreen(String nickname, String teamName) {
+        this.teamName = teamName;
+        this.nickname = nickname;
+
+        setTitle("채팅방 - " + nickname); // 제목에 닉네임 표시
+        setSize(400, 600);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        // 채팅 표시 패널
+        chatPanel = new JPanel();
+        chatPanel.setLayout(new BoxLayout(chatPanel, BoxLayout.Y_AXIS)); // 수직 정렬
+        chatPanel.setBackground(new Color(245, 245, 245));
+
+        scrollPane = new JScrollPane(chatPanel);
+        scrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        add(scrollPane, BorderLayout.CENTER);
+
+        // 입력 패널
+        JPanel inputPanel = new JPanel(new BorderLayout());
+        messageField = new JTextField();
+        JButton sendButton = new JButton("전송");
+
+        // 전송 버튼 클릭 이벤트
+        sendButton.addActionListener((ActionEvent e) -> sendMessage());
+
+        inputPanel.add(messageField, BorderLayout.CENTER);
+        inputPanel.add(sendButton, BorderLayout.EAST);
+        add(inputPanel, BorderLayout.SOUTH);
+
+        // 이전 메시지 로드
+        loadMessagesFromDatabase();
+
+        setVisible(true);
+    }
+
+    // 메시지 전송
+    private void sendMessage() {
+        String messageText = messageField.getText().trim();
+        if (!messageText.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            ChatMessage newMessage = new ChatMessage(nickname, now, messageText); // 닉네임을 포함
+            chatMessages.add(newMessage);
+            saveMessageToDatabase(newMessage); // 데이터베이스에 저장
+            messageField.setText(""); // 입력 필드 초기화
+            updateChatDisplay(); // 화면 갱신
+        }
+    }
+
+    // 채팅 화면 갱신
+    private void updateChatDisplay() {
+        chatPanel.removeAll(); // 이전 메시지 삭제
+
+        String previousDate = ""; // 이전 메시지의 날짜
+
+        for (ChatMessage message : chatMessages) {
+            String currentDate = message.getTimestamp().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+            String currentTime = message.getTimestamp().format(DateTimeFormatter.ofPattern("HH:mm"));
+
+            // 날짜가 바뀌었을 경우 날짜 표시
+            if (!currentDate.equals(previousDate)) {
+                JLabel dateLabel = new JLabel(currentDate);
+                dateLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                dateLabel.setForeground(new Color(100, 100, 100));
+                dateLabel.setOpaque(true);
+                dateLabel.setBackground(new Color(230, 230, 230));
+                dateLabel.setFont(new Font("Arial", Font.BOLD, 12));
+                dateLabel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0)); // 간격 축소
+                chatPanel.add(dateLabel);
+                previousDate = currentDate;
+            }
+
+            // 메시지 패널
+            JPanel messagePanel = new JPanel();
+            messagePanel.setLayout(new BorderLayout());
+            messagePanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10)); // 메시지 간 여백
+            messagePanel.setBackground(new Color(245, 245, 245));
+
+         // 닉네임 및 메시지
+            JLabel messageLabel = new JLabel(message.getSender() + ": " + message.getMessage());
+
+            // 기존 폰트 대신 한글 지원 폰트로 변경
+            messageLabel.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
+
+
+            // 시간 라벨
+            JLabel timeLabel = new JLabel(currentTime);
+            timeLabel.setFont(new Font("Arial", Font.ITALIC, 10));
+            timeLabel.setForeground(new Color(150, 150, 150));
+            timeLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+
+            // 메시지와 시간 추가
+            messagePanel.add(messageLabel, BorderLayout.WEST);
+            messagePanel.add(timeLabel, BorderLayout.EAST);
+
+            chatPanel.add(messagePanel);
+        }
+
+        chatPanel.revalidate(); // UI 갱신
+        chatPanel.repaint();
+        scrollToBottom();
+    }
+
+    // 스크롤을 맨 아래로 이동
+    private void scrollToBottom() {
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar vertical = scrollPane.getVerticalScrollBar();
+            vertical.setValue(vertical.getMaximum());
+        });
+    }
+
+    // 메시지를 데이터베이스에 저장
+    private void saveMessageToDatabase(ChatMessage message) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "INSERT INTO team_chat (team_name, sender, message, timestamp) VALUES (?, ?, ?, ?)";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, teamName);
+            stmt.setString(2, message.getSender());
+            stmt.setString(3, message.getMessage());
+            stmt.setTimestamp(4, Timestamp.valueOf(message.getTimestamp()));
+            stmt.executeUpdate();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "메시지를 저장하는 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 데이터베이스에서 메시지 로드
+    private void loadMessagesFromDatabase() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT sender, message, timestamp FROM team_chat WHERE team_name = ? ORDER BY timestamp ASC";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setString(1, teamName);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                String sender = rs.getString("sender");
+                String messageText = rs.getString("message");
+                LocalDateTime timestamp = rs.getTimestamp("timestamp").toLocalDateTime();
+                chatMessages.add(new ChatMessage(sender, timestamp, messageText));
+            }
+
+            updateChatDisplay();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "메시지를 불러오는 중 오류가 발생했습니다.");
+        }
+    }
+
+    public static void main(String[] args) {
+        new ChatScreen("홍길동", "SampleTeam");
+    }
+}
+
+// 메시지 클래스
+class ChatMessage {
+    private String sender;
+    private LocalDateTime timestamp;
+    private String message;
+
+    public ChatMessage(String sender, LocalDateTime timestamp, String message) {
+        this.sender = sender;
+        this.timestamp = timestamp;
+        this.message = message;
+    }
+
+    public String getSender() {
+        return sender;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+}
+
+
